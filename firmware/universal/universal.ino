@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_mac.h>
 #include <esp_partition.h>
 
 // One firmware image serves every project. The browser provisions this image
@@ -45,8 +46,11 @@ unsigned long lastAnalogRead = 0;
 String baseTopic() { return String(mqtt_prefix) + "/" + uid + "/"; }
 
 String boardUid() {
+  uint8_t mac[6];
+  esp_efuse_mac_get_default(mac);
   char value[18];
-  snprintf(value, sizeof(value), "esp32%012llx", (unsigned long long)(ESP.getEfuseMac() & 0xffffffffffffULL));
+  snprintf(value, sizeof(value), "esp32%02x%02x%02x%02x%02x%02x",
+    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   return String(value);
 }
 
