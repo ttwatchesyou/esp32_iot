@@ -67,11 +67,20 @@ async function compile(body) {
     const files = await readdir(outDir);
     const pick = (suffix) => files.find((file) => file.endsWith(suffix));
     const toBase64 = async (file) => (await readFile(path.join(outDir, file))).toString("base64");
+    const mergedToBase64 = async (file) => {
+      const data = await readFile(path.join(outDir, file));
+      let end = data.length;
+      while (end > 0 && data[end - 1] === 0xff) end--;
+      end = Math.min(data.length, Math.ceil(end / 4096) * 4096);
+      return data.subarray(0, end).toString("base64");
+    };
     const images = [];
     const merged = pick(".ino.merged.bin");
 
     if (merged) {
-      images.push({ name: merged, address: 0, data: await toBase64(merged) });
+      // The ESP32 tool pads merged images to the full flash size with 0xFF.
+      // Sending that padding wastes several MB of RAM and response bandwidth.
+      images.push({ name: merged, address: 0, data: await mergedToBase64(merged) });
     } else {
       const boot = pick(".ino.bootloader.bin");
       const partitions = pick(".ino.partitions.bin");

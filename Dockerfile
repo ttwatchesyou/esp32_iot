@@ -28,6 +28,8 @@ WORKDIR /app
 COPY compile-server.mjs ./compile-server.mjs
 
 ENV NODE_ENV=production \
+    NODE_OPTIONS=--max-old-space-size=96 \
+    MALLOC_ARENA_MAX=2 \
     PORT=10000
 
 EXPOSE 10000

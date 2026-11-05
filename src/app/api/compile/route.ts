@@ -92,13 +92,20 @@ export async function POST(req: Request) {
     const files = await readdir(outDir);
     const pick = (suffix: string) => files.find((f) => f.endsWith(suffix));
     const toB64 = async (f: string) => (await readFile(path.join(outDir, f))).toString("base64");
+    const mergedToB64 = async (f: string) => {
+      const data = await readFile(path.join(outDir, f));
+      let end = data.length;
+      while (end > 0 && data[end - 1] === 0xff) end--;
+      end = Math.min(data.length, Math.ceil(end / 4096) * 4096);
+      return data.subarray(0, end).toString("base64");
+    };
 
     const images: { name: string; address: number; data: string }[] = [];
     const merged = pick(".ino.merged.bin");
 
     if (merged) {
       // esp32 core 3.x สร้างไฟล์ merged (bootloader+partitions+app) ให้ แฟลชที่ 0x0 ได้เลย
-      images.push({ name: merged, address: 0x0, data: await toB64(merged) });
+      images.push({ name: merged, address: 0x0, data: await mergedToB64(merged) });
     } else {
       const boot = pick(".ino.bootloader.bin");
       const part = pick(".ino.partitions.bin");
