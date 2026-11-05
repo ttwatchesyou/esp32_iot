@@ -1,21 +1,16 @@
 import { DEVICE_TYPES, type DeviceType, type PinConfig } from "./devices";
 
-/**
- * ตั้งค่า MQTT broker ผ่าน env (Vercel → Settings → Environment Variables)
- * ค่าเริ่มต้นใช้ HiveMQ public broker (ฟรี ไม่ต้องสมัคร) — ใครรู้ UID ก็ดู/สั่งได้
- * ใช้งานจริงแนะนำ HiveMQ Cloud (ฟรี) แล้วตั้ง user/pass เอง
- */
 export const MQTT = {
   /** เบราว์เซอร์ต่อผ่าน WebSocket */
-  wsUrl: process.env.NEXT_PUBLIC_MQTT_WS_URL || "wss://broker.hivemq.com:8884/mqtt",
+  wsUrl: "wss://0d495914d04845f5914e55fd3e65c6e4.s1.eu.hivemq.cloud:8884/mqtt",
   /** บอร์ดต่อผ่าน TCP */
-  host: process.env.NEXT_PUBLIC_MQTT_HOST || "broker.hivemq.com",
-  port: Number(process.env.NEXT_PUBLIC_MQTT_PORT || 1883),
-  tls: process.env.NEXT_PUBLIC_MQTT_TLS === "true",
-  username: process.env.NEXT_PUBLIC_MQTT_USERNAME || "",
-  password: process.env.NEXT_PUBLIC_MQTT_PASSWORD || "",
-  prefix: (process.env.NEXT_PUBLIC_MQTT_PREFIX || "esp32studio").replace(/\/+$/, ""),
-};
+  host: "0d495914d04845f5914e55fd3e65c6e4.s1.eu.hivemq.cloud",
+  port: 8883,
+  tls: true,
+  username: "ttwatchesyou",
+  password: "Greenpig001",
+  prefix: "esp32studio",
+} as const;
 
 export const isPublicBroker = !MQTT.username;
 
@@ -38,6 +33,13 @@ export function newUid(): string {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
+
+/** UID/topic ที่คงที่และไม่ซ้ำกันต่อบอร์ด จาก hardware MAC 48 บิต */
+export function uidFromMac(mac: string): string {
+  const hex = mac.toLowerCase().replace(/[^0-9a-f]/g, "");
+  if (hex.length !== 12) throw new Error("อ่าน MAC address ของบอร์ดไม่ได้");
+  return `esp32${hex}`;
 }
 
 export const isValidUid = (s: string) => /^[a-z0-9]{6,32}$/.test(s);

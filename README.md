@@ -52,17 +52,9 @@ npm run dev
 
 ## Dashboard และ MQTT
 
-บอร์ดคุยกับ Dashboard ผ่าน MQTT โดยตรง ค่าเริ่มต้นใช้ HiveMQ public broker ซึ่งเหมาะกับการเรียนและทดลอง สำหรับงานจริงควรตั้ง broker ส่วนตัวผ่าน environment variables:
+บอร์ดและ Dashboard เชื่อม HiveMQ Cloud ผ่าน TLS โดยตรง ค่า broker ถูกกำหนดไว้ใน firmware และเว็บ หัวข้อของแต่ละบอร์ดสร้างจาก hardware MAC 48 บิตในรูป `esp32studio/esp32<mac>/` จึงคงเดิมเมื่อเปิดจากเบราว์เซอร์เครื่องอื่นและไม่ชนกันระหว่างบอร์ด
 
-- `NEXT_PUBLIC_MQTT_WS_URL`
-- `NEXT_PUBLIC_MQTT_HOST`
-- `NEXT_PUBLIC_MQTT_PORT`
-- `NEXT_PUBLIC_MQTT_TLS`
-- `NEXT_PUBLIC_MQTT_USERNAME`
-- `NEXT_PUBLIC_MQTT_PASSWORD`
-- `NEXT_PUBLIC_MQTT_PREFIX`
-
-หัวข้ออยู่ใต้ `esp32studio/<UID>/` ได้แก่ `config`, `status`, `out/<gpio>`, `state/<gpio>` และ `in/<gpio>`
+หัวข้อย่อยได้แก่ `config`, `status`, `out/<gpio>`, `state/<gpio>` และ `in/<gpio>`
 
 ## Deploy บน Vercel
 

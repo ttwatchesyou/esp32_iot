@@ -11,6 +11,13 @@
 constexpr size_t MAX_CONFIG = 6000;
 constexpr size_t MAX_PINS = 32;
 
+// HiveMQ Cloud broker used by both the board and the web dashboard.
+const char *mqtt_server = "0d495914d04845f5914e55fd3e65c6e4.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char *mqtt_user = "ttwatchesyou";
+const char *mqtt_pass = "Greenpig001";
+const char *mqtt_prefix = "esp32studio";
+
 struct PinDef {
   int gpio;
   String type;
@@ -28,16 +35,20 @@ WiFiClientSecure secureNet;
 PubSubClient mqtt(plainNet);
 String serialLine;
 String savedConfig;
-String wifiSsid, wifiPassword, uid, mqttHost, mqttUser, mqttPassword, mqttPrefix;
-int mqttPort = 1883;
-bool mqttTls = false;
+String wifiSsid, wifiPassword, uid;
 PinDef pins[MAX_PINS];
 size_t pinCount = 0;
 unsigned long lastWifiTry = 0;
 unsigned long lastMqttTry = 0;
 unsigned long lastAnalogRead = 0;
 
-String baseTopic() { return mqttPrefix + "/" + uid + "/"; }
+String baseTopic() { return String(mqtt_prefix) + "/" + uid + "/"; }
+
+String boardUid() {
+  char value[18];
+  snprintf(value, sizeof(value), "esp32%012llx", (unsigned long long)(ESP.getEfuseMac() & 0xffffffffffffULL));
+  return String(value);
+}
 
 void publishValue(const String &sub, int value) {
   if (mqtt.connected()) mqtt.publish((baseTopic() + sub).c_str(), String(value).c_str(), true);
@@ -76,13 +87,9 @@ bool loadRuntimeConfig(const String &raw) {
 
   wifiSsid = doc["s"] | "";
   wifiPassword = doc["w"] | "";
-  uid = doc["u"] | "";
-  mqttHost = doc["h"] | "broker.hivemq.com";
-  mqttPort = doc["o"] | 1883;
-  mqttTls = doc["x"] | false;
-  mqttUser = doc["a"] | "";
-  mqttPassword = doc["k"] | "";
-  mqttPrefix = doc["r"] | "esp32studio";
+  // Derive the topic identity from the chip so copied/stale browser data can
+  // never make two physical boards publish to the same topic.
+  uid = boardUid();
   pinCount = 0;
 
   for (JsonObject p : doc["c"]["p"].as<JsonArray>()) {
@@ -97,7 +104,7 @@ bool loadRuntimeConfig(const String &raw) {
     d.analog = d.type == "analog";
     d.last = -1;
   }
-  return uid.length() >= 6;
+  return true;
 }
 
 uint32_t configChecksum(const uint8_t *data, size_t length) {
@@ -164,9 +171,7 @@ void connectMqtt() {
   lastMqttTry = millis();
   String clientId = "esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
   String willTopic = baseTopic() + "status";
-  bool ok = mqttUser.length()
-    ? mqtt.connect(clientId.c_str(), mqttUser.c_str(), mqttPassword.c_str(), willTopic.c_str(), 1, true, "offline")
-    : mqtt.connect(clientId.c_str(), willTopic.c_str(), 1, true, "offline");
+  bool ok = mqtt.connect(clientId.c_str(), mqtt_user, mqtt_pass, willTopic.c_str(), 1, true, "offline");
   if (!ok) return;
   mqtt.publish(willTopic.c_str(), "online", true);
 
@@ -217,13 +222,9 @@ void setup() {
 
   if (savedConfig.length() && loadRuntimeConfig(savedConfig)) {
     configurePins();
-    if (mqttTls) {
-      secureNet.setInsecure();
-      mqtt.setClient(secureNet);
-    } else {
-      mqtt.setClient(plainNet);
-    }
-    mqtt.setServer(mqttHost.c_str(), mqttPort);
+    secureNet.setInsecure();
+    mqtt.setClient(secureNet);
+    mqtt.setServer(mqtt_server, mqtt_port);
     mqtt.setBufferSize(2048);
     mqtt.setCallback(onMessage);
     connectWifi();

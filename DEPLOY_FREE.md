@@ -6,7 +6,7 @@
 
 1. Push repository ขึ้น GitHub
 2. Import repository ใน Vercel และเลือก Next.js
-3. ตั้งค่า MQTT เฉพาะเมื่อต้องการใช้ broker ส่วนตัว ค่าเริ่มต้นใช้ public broker ได้ทันที
+3. MQTT ใช้ HiveMQ Cloud ที่กำหนดไว้ในซอร์ส และสร้าง topic แยกจาก MAC ของแต่ละบอร์ด
 4. Deploy แล้วเปิด URL ด้วย Chrome หรือ Edge
 5. เสียบ ESP32 เลือกพอร์ต ตั้งค่าขา/Wi‑Fi และกด **อัปโหลดลงบอร์ด**
 

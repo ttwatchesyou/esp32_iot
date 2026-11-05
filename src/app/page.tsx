@@ -14,7 +14,7 @@ import NavBar from "@/components/NavBar";
 import Link from "next/link";
 import { saveLocalDevice } from "@/lib/localDevices";
 import { publishConfig } from "@/hooks/useBoardMqtt";
-import { MQTT, encodeConfig, newUid, type BoardConfig } from "@/lib/mqttConfig";
+import { MQTT, encodeConfig, newUid, uidFromMac, type BoardConfig } from "@/lib/mqttConfig";
 import { DEVICE_TYPES, initialOutput } from "@/lib/devices";
 import { useEsp32 } from "@/hooks/useEsp32";
 import { BOARDS, hex, type BoardDef, type FlashImage } from "@/lib/boards";
@@ -420,7 +420,8 @@ export default function WizardPage() {
 
   const handleConnect = async () => {
     try {
-      const chipName = await esp.connect();
+      const { chipName, macAddress } = await esp.connect();
+      if (macAddress) setUid(uidFromMac(macAddress));
       const normalized = chipName.toUpperCase();
       const detectedId = normalized.includes("ESP32-S3") ? "esp32s3"
         : normalized.includes("ESP32-C3") ? "esp32c3"
@@ -519,12 +520,6 @@ export default function WizardPage() {
         s: cloudOn ? ssid : "",
         w: cloudOn ? wifiPass : "",
         u: uid,
-        h: MQTT.host,
-        o: MQTT.port,
-        x: MQTT.tls,
-        a: MQTT.username,
-        k: MQTT.password,
-        r: MQTT.prefix,
         c: compactBoard,
       });
       const settings = configImage(provisioning);
@@ -654,7 +649,7 @@ export default function WizardPage() {
                   </div>
                   <div className="uid">
                     <div>
-                      <span>UID ของบอร์ดนี้</span>
+                      <span>UID/topic เฉพาะบอร์ด</span>
                       <code>{uid}</code>
                       {esp.mac && <small>ผูกกับบอร์ด MAC {esp.mac}</small>}
                     </div>
@@ -662,7 +657,7 @@ export default function WizardPage() {
                       <span>ลิงก์ Dashboard</span>
                       <code>{origin}/d/{uid}</code>
                     </div>
-                    <Button onClick={() => setUid(newUid())}>สร้าง UID ใหม่</Button>
+                    {!esp.mac && <Button onClick={() => setUid(newUid())}>สร้าง UID ชั่วคราว</Button>}
                   </div>
                 </>
               )}
