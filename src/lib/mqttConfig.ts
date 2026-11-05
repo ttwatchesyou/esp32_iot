@@ -1,0 +1,88 @@
+import { DEVICE_TYPES, type DeviceType, type PinConfig } from "./devices";
+
+/**
+ * ตั้งค่า MQTT broker ผ่าน env (Vercel → Settings → Environment Variables)
+ * ค่าเริ่มต้นใช้ HiveMQ public broker (ฟรี ไม่ต้องสมัคร) — ใครรู้ UID ก็ดู/สั่งได้
+ * ใช้งานจริงแนะนำ HiveMQ Cloud (ฟรี) แล้วตั้ง user/pass เอง
+ */
+export const MQTT = {
+  /** เบราว์เซอร์ต่อผ่าน WebSocket */
+  wsUrl: process.env.NEXT_PUBLIC_MQTT_WS_URL || "wss://broker.hivemq.com:8884/mqtt",
+  /** บอร์ดต่อผ่าน TCP */
+  host: process.env.NEXT_PUBLIC_MQTT_HOST || "broker.hivemq.com",
+  port: Number(process.env.NEXT_PUBLIC_MQTT_PORT || 1883),
+  tls: process.env.NEXT_PUBLIC_MQTT_TLS === "true",
+  username: process.env.NEXT_PUBLIC_MQTT_USERNAME || "",
+  password: process.env.NEXT_PUBLIC_MQTT_PASSWORD || "",
+  prefix: (process.env.NEXT_PUBLIC_MQTT_PREFIX || "esp32studio").replace(/\/+$/, ""),
+};
+
+export const isPublicBroker = !MQTT.username;
+
+/** หัวข้อ MQTT ของบอร์ด 1 ตัว */
+export const topics = (uid: string) => {
+  const base = `${MQTT.prefix}/${uid}/`;
+  return {
+    base,
+    all: `${base}#`,
+    status: `${base}status`,
+    config: `${base}config`,
+    out: (gpio: number | string) => `${base}out/${gpio}`,
+    state: (gpio: number | string) => `${base}state/${gpio}`,
+    input: (gpio: number | string) => `${base}in/${gpio}`,
+  };
+};
+
+/** UID สุ่ม 12 ตัว (a-z0-9) — เดายาก ใช้เป็นที่อยู่ Dashboard: /d/<uid> */
+export function newUid(): string {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
+
+export const isValidUid = (s: string) => /^[a-z0-9]{6,32}$/.test(s);
+
+/** ข้อมูลบอร์ดที่เก็บแบบ retained บน broker — เปิดลิงก์จากเครื่องไหนก็เห็น */
+export interface BoardConfig {
+  v: 1;
+  name: string;
+  board: string;
+  mac?: string;
+  pins: PinConfig[];
+}
+
+/** แบบย่อเพื่อให้ฝังในเฟิร์มแวร์ได้ (ข้อความสั้น) */
+export function encodeConfig(c: BoardConfig): string {
+  return JSON.stringify({
+    v: 1,
+    n: c.name,
+    b: c.board,
+    m: c.mac,
+    p: c.pins.map((p) => ({ g: p.gpio, t: p.type, n: p.name, l: p.level === "HIGH" ? 1 : 0, u: p.pull === "PULLUP" ? 1 : p.pull === "PULLDOWN" ? 2 : 0 })),
+  });
+}
+
+export function decodeConfig(raw: string): BoardConfig | null {
+  try {
+    const j = JSON.parse(raw);
+    if (!j || !Array.isArray(j.p)) return null;
+    return {
+      v: 1,
+      name: String(j.n ?? "บอร์ด"),
+      board: String(j.b ?? ""),
+      mac: j.m ? String(j.m) : undefined,
+      pins: j.p
+        .filter((p: { t: string }) => p && p.t in DEVICE_TYPES)
+        .map((p: { g: number; t: DeviceType; n?: string; l?: number; u?: number }) => ({
+          id: String(p.g),
+          gpio: Number(p.g),
+          type: p.t,
+          name: String(p.n ?? ""),
+          level: p.l ? "HIGH" : "LOW",
+          pull: p.u === 1 ? "PULLUP" : p.u === 2 ? "PULLDOWN" : "NONE",
+        })),
+    };
+  } catch {
+    return null;
+  }
+}

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: esp32-iot-compiler
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: COMPILE_SERVER_TOKEN
+        sync: false
