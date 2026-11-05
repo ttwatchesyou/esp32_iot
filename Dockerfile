@@ -14,7 +14,10 @@ RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/inst
 # Compile each supported board once while building the image. Arduino CLI keeps
 # the resulting core/sketch artifacts in its build cache, so the first user
 # request does not spend the Vercel request timeout compiling the whole core.
-RUN mkdir -p /tmp/warmup \
+RUN mkdir -p /opt/arduino-cache \
+    && arduino-cli config set build_cache.path /opt/arduino-cache \
+    && arduino-cli config set build_cache.compilations_before_purge 0 \
+    && mkdir -p /tmp/warmup \
     && printf '#include <Arduino.h>\nvoid setup() {}\nvoid loop() {}\n' > /tmp/warmup/warmup.ino \
     && for board in esp32 esp32s3 esp32c3 esp32c6; do \
          arduino-cli compile --jobs 1 --fqbn "esp32:esp32:${board}" /tmp/warmup; \
