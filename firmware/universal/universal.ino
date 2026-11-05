@@ -42,6 +42,7 @@ size_t pinCount = 0;
 unsigned long lastWifiTry = 0;
 unsigned long lastMqttTry = 0;
 unsigned long lastAnalogRead = 0;
+unsigned long lastOnlineHeartbeat = 0;
 
 String baseTopic() { return String(mqtt_prefix) + "/" + uid + "/"; }
 
@@ -165,7 +166,6 @@ void configurePins() {
 void connectWifi() {
   if (!wifiSsid.length() || WiFi.status() == WL_CONNECTED || millis() - lastWifiTry < 10000) return;
   lastWifiTry = millis();
-  WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
   Serial.println("ESP32IOT:WIFI_CONNECTING");
 }
@@ -173,11 +173,15 @@ void connectWifi() {
 void connectMqtt() {
   if (WiFi.status() != WL_CONNECTED || mqtt.connected() || millis() - lastMqttTry < 3000) return;
   lastMqttTry = millis();
-  String clientId = "esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  String clientId = uid;
   String willTopic = baseTopic() + "status";
   bool ok = mqtt.connect(clientId.c_str(), mqtt_user, mqtt_pass, willTopic.c_str(), 1, true, "offline");
-  if (!ok) return;
+  if (!ok) {
+    Serial.printf("ESP32IOT:MQTT_RETRY:%d\n", mqtt.state());
+    return;
+  }
   mqtt.publish(willTopic.c_str(), "online", true);
+  lastOnlineHeartbeat = millis();
 
   JsonDocument doc;
   if (!deserializeJson(doc, savedConfig)) {
@@ -226,10 +230,16 @@ void setup() {
 
   if (savedConfig.length() && loadRuntimeConfig(savedConfig)) {
     configurePins();
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);
     secureNet.setInsecure();
     mqtt.setClient(secureNet);
     mqtt.setServer(mqtt_server, mqtt_port);
     mqtt.setBufferSize(2048);
+    mqtt.setKeepAlive(20);
+    mqtt.setSocketTimeout(10);
     mqtt.setCallback(onMessage);
     connectWifi();
     Serial.println("ESP32IOT:READY");
@@ -241,8 +251,18 @@ void setup() {
 void loop() {
   readProvisioning();
   connectWifi();
-  connectMqtt();
-  mqtt.loop();
+  if (WiFi.status() == WL_CONNECTED) {
+    connectMqtt();
+    if (mqtt.connected()) {
+      mqtt.loop();
+      if (millis() - lastOnlineHeartbeat > 30000) {
+        mqtt.publish((baseTopic() + "status").c_str(), "online", true);
+        lastOnlineHeartbeat = millis();
+      }
+    }
+  } else if (mqtt.connected()) {
+    mqtt.disconnect();
+  }
 
   for (size_t i = 0; i < pinCount; i++) {
     PinDef &p = pins[i];
