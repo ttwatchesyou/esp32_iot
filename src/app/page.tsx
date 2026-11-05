@@ -14,7 +14,7 @@ import NavBar from "@/components/NavBar";
 import Link from "next/link";
 import { saveLocalDevice } from "@/lib/localDevices";
 import { publishConfig } from "@/hooks/useBoardMqtt";
-import { MQTT, newUid, type BoardConfig } from "@/lib/mqttConfig";
+import { MQTT, encodeConfig, newUid, type BoardConfig } from "@/lib/mqttConfig";
 import { DEVICE_TYPES, initialOutput } from "@/lib/devices";
 import { useEsp32 } from "@/hooks/useEsp32";
 import { BOARDS, hex, type BoardDef, type FlashImage } from "@/lib/boards";
@@ -333,13 +333,25 @@ function load(): Saved {
   return { boardId: "esp32", rows: [newRow()], code: "" };
 }
 
-const b64ToBytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-
 function friendly(msg: string): string | null {
   if (/No port selected/i.test(msg)) return null;
   if (/open|busy|in use/i.test(msg)) return "พอร์ตถูกโปรแกรมอื่นใช้อยู่ ลองปิด Arduino IDE หรือแท็บอื่นก่อน";
   if (/timeout|sync|connect|chip/i.test(msg)) return "บอร์ดไม่ตอบสนอง ลองกดปุ่ม BOOT บนบอร์ดค้างไว้ แล้วลองใหม่";
   return msg;
+}
+
+function configImage(json: string): FlashImage {
+  const body = new TextEncoder().encode(json);
+  if (body.length > 6000) throw new Error("ค่าตั้งมีขนาดใหญ่เกิน 6 KB กรุณาย่อชื่อบอร์ดหรือชื่ออุปกรณ์");
+  const data = new Uint8Array(16 + body.length);
+  data.set(new TextEncoder().encode("IOTCFG1"));
+  const view = new DataView(data.buffer);
+  view.setUint32(8, body.length, true);
+  let checksum = 2166136261;
+  body.forEach((byte) => { checksum = Math.imul(checksum ^ byte, 16777619) >>> 0; });
+  view.setUint32(12, checksum, true);
+  data.set(body, 16);
+  return { name: "project-config.bin", address: 0x1f0000, data };
 }
 
 const STEPS = ["เลือกบอร์ด", "ตั้งค่าขา", "ดูโค้ด", "อัปโหลด"];
@@ -357,7 +369,6 @@ export default function WizardPage() {
   const [wifiPass, setWifiPass] = useState("");
   const [uid, setUid] = useState("");
   const [origin, setOrigin] = useState("");
-  const [noCompiler, setNoCompiler] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [code, setCode] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -409,8 +420,19 @@ export default function WizardPage() {
 
   const handleConnect = async () => {
     try {
-      await esp.connect();
-      message.success("เชื่อมต่อบอร์ดแล้ว");
+      const chipName = await esp.connect();
+      const normalized = chipName.toUpperCase();
+      const detectedId = normalized.includes("ESP32-S3") ? "esp32s3"
+        : normalized.includes("ESP32-C3") ? "esp32c3"
+          : normalized.includes("ESP32-C6") ? "esp32c6"
+            : "esp32";
+      if (detectedId !== boardId) {
+        setBoardId(detectedId);
+        setUploaded(false);
+        message.info(`ตรวจพบบอร์ด ${BOARDS.find((b) => b.id === detectedId)?.label} และเลือกให้แล้ว`);
+      } else {
+        message.success("เชื่อมต่อบอร์ดแล้ว");
+      }
     } catch (e) {
       const m = friendly((e as Error).message);
       if (m) message.error(m);
@@ -465,39 +487,6 @@ export default function WizardPage() {
     catch { message.error("คัดลอกไม่ได้"); }
   };
 
-  const compile = async (): Promise<FlashImage[] | null> => {
-    setCompiling(true);
-    appendLog(`\n▶ แปลงโค้ดสำหรับ ${board.label}...`);
-    try {
-      const res = await fetch("/api/compile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, fqbn: board.fqbn, bootloaderAddress: board.bootloaderAddress }),
-      });
-      const json = await res.json();
-      appendLog(json.log ?? "");
-      if (res.status === 501) {
-        setNoCompiler(true);
-        return null;
-      }
-      if (!json.ok) {
-        message.error("แปลงโค้ดไม่ผ่าน ดูรายละเอียดด้านล่าง");
-        return null;
-      }
-      const imgs: FlashImage[] = json.images.map((i: { name: string; address: number; data: string }) => ({
-        name: i.name, address: i.address, data: b64ToBytes(i.data),
-      }));
-      imgs.forEach((i) => appendLog(`  • ${i.name} @ ${hex(i.address)}`));
-      return imgs;
-    } catch (e) {
-      appendLog(`✖ ${(e as Error).message}`);
-      message.error("ติดต่อเซิร์ฟเวอร์ไม่ได้");
-      return null;
-    } finally {
-      setCompiling(false);
-    }
-  };
-
   const flash = async (imgs: FlashImage[]) => {
     appendLog(`\n▶ อัปโหลดลงบอร์ด...`);
     try {
@@ -511,8 +500,46 @@ export default function WizardPage() {
   };
 
   const uploadAll = async () => {
-    const imgs = await compile();
-    if (imgs) await flash(imgs);
+    setUploaded(false);
+    setCompiling(true);
+    appendLog(`\n▶ เตรียมเฟิร์มแวร์สำเร็จรูปสำหรับ ${board.label}...`);
+    try {
+      const response = await fetch(`/firmware/${board.id}.merged.bin`, { cache: "no-cache" });
+      if (!response.ok) throw new Error(`ไม่พบเฟิร์มแวร์สำหรับ ${board.label} (${response.status})`);
+      const image: FlashImage = {
+        name: `${board.id}.merged.bin`,
+        address: 0,
+        data: new Uint8Array(await response.arrayBuffer()),
+      };
+      appendLog(`  • ${image.name} @ ${hex(image.address)} (${Math.ceil(image.data.length / 1024)} KB)`);
+      setCompiling(false);
+
+      const compactBoard = JSON.parse(encodeConfig(boardConfig()));
+      const provisioning = JSON.stringify({
+        s: cloudOn ? ssid : "",
+        w: cloudOn ? wifiPass : "",
+        u: uid,
+        h: MQTT.host,
+        o: MQTT.port,
+        x: MQTT.tls,
+        a: MQTT.username,
+        k: MQTT.password,
+        r: MQTT.prefix,
+        c: compactBoard,
+      });
+      const settings = configImage(provisioning);
+      appendLog("▶ เขียนเฟิร์มแวร์และค่าตั้งลงบอร์ด...");
+      await esp.flash([image, settings], { eraseAll });
+      appendLog("✔ บอร์ดได้รับเฟิร์มแวร์และค่าตั้งแล้ว");
+      setUploaded(true);
+      message.success("ติดตั้งและตั้งค่าบอร์ดสำเร็จ!");
+    } catch (e) {
+      const detail = friendly((e as Error).message) ?? (e as Error).message;
+      appendLog(`✖ ${detail}`);
+      message.error(detail);
+    } finally {
+      setCompiling(false);
+    }
   };
 
   /* ----- step render ----- */
@@ -649,7 +676,7 @@ export default function WizardPage() {
             <Title style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
               <div>
                 <h2>นี่คือโค้ดของคุณ</h2>
-                <p>สร้างจาก {pins.length} ขาที่ตั้งไว้ แก้ไขเพิ่มได้ถ้าต้องการ</p>
+                <p>โค้ดตัวอย่างตามค่าที่เลือก ดาวน์โหลดไปแก้ต่อได้ ส่วนปุ่มติดตั้งใช้เฟิร์มแวร์กลางที่ผ่านการทดสอบแล้ว</p>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <Button icon={<CopyOutlined />} onClick={copyCode}>คัดลอกโค้ด</Button>
@@ -674,7 +701,7 @@ export default function WizardPage() {
                 </>
               ) : busy && esp.status !== "connecting" ? (
                 <>
-                  <h3>{compiling ? "กำลังแปลงโค้ด…" : "กำลังเขียนลงบอร์ด… อย่าถอดสาย"}</h3>
+                  <h3>{compiling ? "กำลังเตรียมและตั้งค่าบอร์ด… อย่าถอดสาย" : "กำลังเขียนลงบอร์ด… อย่าถอดสาย"}</h3>
                   <Progress type="circle" percent={compiling ? 0 : esp.progress} strokeColor="#8B5E3C" size={110}
                     format={(p) => (compiling ? "…" : `${p}%`)} />
                 </>
@@ -682,7 +709,7 @@ export default function WizardPage() {
                 <>
                   <CloudUploadOutlined style={{ fontSize: 44, color: "#8B5E3C" }} />
                   <h3>{connected ? "พร้อมอัปโหลดลงบอร์ด" : "เชื่อมต่อบอร์ดก่อนอัปโหลด"}</h3>
-                  <p>{connected ? "กดปุ่มด้านล่าง ใช้เวลาประมาณ 30 วินาที–2 นาที" : "เสียบสาย USB แล้วกดเชื่อมต่อ"}</p>
+                  <p>{connected ? "กดครั้งเดียว เว็บจะติดตั้งและตั้งค่าบอร์ดให้ ใช้เวลาประมาณ 1–2 นาที" : "เสียบสาย USB แล้วกดเชื่อมต่อ"}</p>
                   {connected ? (
                     <BigBtn type="primary" icon={<CloudUploadOutlined />} onClick={uploadAll}>อัปโหลดลงบอร์ด</BigBtn>
                   ) : (
@@ -696,21 +723,6 @@ export default function WizardPage() {
               )}
               {uploaded && <Button onClick={uploadAll} disabled={busy}>อัปโหลดอีกครั้ง</Button>}
             </UploadHero>
-
-            {noCompiler && (
-              <WifiCard>
-                <h3>เว็บนี้ยังไม่ได้ต่อเซิร์ฟเวอร์คอมไพล์</h3>
-                <p>
-                  บน Vercel คอมไพล์โค้ด ESP32 ไม่ได้ ให้ดาวน์โหลดไฟล์ .ino แล้วอัปโหลดด้วย Arduino IDE
-                  (ติดตั้งบอร์ด esp32 และไลบรารี PubSubClient) — หรือให้ผู้ดูแลตั้งค่า COMPILE_SERVER_URL
-                  ไปยังเซิร์ฟเวอร์คอมไพล์ (ใช้ Dockerfile ในโปรเจค) แล้วปุ่มอัปโหลดจะใช้ได้ทันที
-                </p>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Button type="primary" icon={<DownloadOutlined />} onClick={downloadIno}>ดาวน์โหลด .ino</Button>
-                  {cloudOn && uid && <Link href={`/d/${uid}`}><Button>เปิด Dashboard <ArrowRightOutlined /></Button></Link>}
-                </div>
-              </WifiCard>
-            )}
 
             {connected && (
               <div>

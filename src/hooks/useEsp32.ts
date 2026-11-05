@@ -48,7 +48,7 @@ export function useEsp32({ flashBaud = 921600, onLog }: UseEsp32Options = {}) {
 
   /** สร้าง loader ใหม่ทุกครั้ง (esptool จะ reset บอร์ดเข้าสู่ bootloader) */
   const withLoader = useCallback(
-    async <T,>(fn: (loader: ESPLoader, transport: Transport) => Promise<T>): Promise<T> => {
+    async <T,>(fn: (loader: ESPLoader, transport: Transport, chipName: string) => Promise<T>): Promise<T> => {
       const port = portRef.current;
       if (!port) throw new Error("ยังไม่ได้เลือกพอร์ต");
       const { ESPLoader, Transport } = await import("esptool-js");
@@ -60,7 +60,7 @@ export function useEsp32({ flashBaud = 921600, onLog }: UseEsp32Options = {}) {
         try {
           setMac((await loader.chip.readMac(loader)).toUpperCase());
         } catch {}
-        return await fn(loader, transport);
+        return await fn(loader, transport, chipName);
       } finally {
         await transport.disconnect().catch(() => {});
       }
@@ -91,9 +91,10 @@ export function useEsp32({ flashBaud = 921600, onLog }: UseEsp32Options = {}) {
       portRef.current = await navigator.serial.requestPort();
       setHasPort(true);
       setUsbInfo(portRef.current.getInfo());
-      await withLoader(async () => {});
+      const detectedChip = await withLoader(async (_loader, _transport, chipName) => chipName);
       setStatus("ready");
       log("✔ เชื่อมต่อบอร์ดสำเร็จ");
+      return detectedChip;
     } catch (e) {
       setStatus(portRef.current ? "ready" : "error");
       throw e;
