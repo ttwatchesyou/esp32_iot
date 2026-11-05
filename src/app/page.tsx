@@ -322,6 +322,7 @@ interface Saved {
   ssid?: string;
   wifiPass?: string;
   uid?: string;
+  mqttTestText?: string;
 }
 const STORAGE_KEY = "esp32-iot-studio:wizard";
 
@@ -367,6 +368,7 @@ export default function WizardPage() {
   const [cloudOn, setCloudOn] = useState(true);
   const [ssid, setSsid] = useState("");
   const [wifiPass, setWifiPass] = useState("");
+  const [mqttTestText, setMqttTestText] = useState("");
   const [uid, setUid] = useState("");
   const [origin, setOrigin] = useState("");
   const [registering, setRegistering] = useState(false);
@@ -390,6 +392,7 @@ export default function WizardPage() {
     setCloudOn(s.cloudOn ?? true);
     setSsid(s.ssid ?? "");
     setWifiPass(s.wifiPass ?? "");
+    setMqttTestText(s.mqttTestText ?? "");
     setUid(s.uid || newUid());
     setOrigin(window.location.origin);
     setCode(s.code ?? "");
@@ -398,10 +401,10 @@ export default function WizardPage() {
   useEffect(() => {
     if (!loaded) return;
     try {
-      const data: Saved = { boardId, rows, code, projectName, cloudOn, ssid, wifiPass, uid };
+      const data: Saved = { boardId, rows, code, projectName, cloudOn, ssid, wifiPass, uid, mqttTestText };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {}
-  }, [loaded, boardId, rows, code, projectName, cloudOn, ssid, wifiPass, uid]);
+  }, [loaded, boardId, rows, code, projectName, cloudOn, ssid, wifiPass, uid, mqttTestText]);
 
   const board = useMemo(() => BOARDS.find((b) => b.id === boardId) ?? BOARDS[0], [boardId]);
   const pins: PinConfig[] = rows.filter((r): r is PinRow & { gpio: number } => r.gpio !== null);
@@ -445,7 +448,7 @@ export default function WizardPage() {
   const registerBoard = async () => {
     const outs: Record<number, number> = {};
     pins.forEach((p) => { if (DEVICE_TYPES[p.type].mode === "OUTPUT") outs[p.gpio] = initialOutput(p); });
-    await publishConfig(uid, boardConfig(), outs);
+    await publishConfig(uid, boardConfig(), outs, mqttTestText);
     saveLocalDevice({ uid, name: projectName || "บอร์ดของฉัน" });
   };
 
@@ -645,6 +648,10 @@ export default function WizardPage() {
                     </label>
                     <label>รหัส WiFi
                       <Input.Password size="large" value={wifiPass} onChange={(e) => setWifiPass(e.target.value)} placeholder="รหัสผ่าน" autoComplete="new-password" />
+                    </label>
+                    <label>ข้อความทดสอบ MQTT
+                      <Input size="large" value={mqttTestText} maxLength={500}
+                        onChange={(e) => setMqttTestText(e.target.value)} placeholder="เช่น สวัสดีจาก ESP32" />
                     </label>
                   </div>
                   <div className="uid">

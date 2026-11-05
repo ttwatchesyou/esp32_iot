@@ -22,6 +22,7 @@ export const topics = (uid: string) => {
     all: `${base}#`,
     status: `${base}status`,
     config: `${base}config`,
+    text: `${base}text`,
     out: (gpio: number | string) => `${base}out/${gpio}`,
     state: (gpio: number | string) => `${base}state/${gpio}`,
     input: (gpio: number | string) => `${base}in/${gpio}`,

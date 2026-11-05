@@ -25,6 +25,7 @@ export function useBoardMqtt(uid: string | null) {
   const [actual, setActual] = useState<Record<string, number>>({});
   const [desired, setDesired] = useState<Record<string, number>>({});
   const [inputs, setInputs] = useState<Record<string, number>>({});
+  const [sharedText, setSharedText] = useState("");
   const [lastMessage, setLastMessage] = useState<number | null>(null);
   const clientRef = useRef<MqttClient | null>(null);
 
@@ -37,6 +38,7 @@ export function useBoardMqtt(uid: string | null) {
     setActual({});
     setDesired({});
     setInputs({});
+    setSharedText("");
 
     (async () => {
       const mqtt = (await import("mqtt")).default;
@@ -66,6 +68,8 @@ export function useBoardMqtt(uid: string | null) {
           if (c) setConfig(c);
         } else if (rest === "status") {
           setOnline(msg === "online");
+        } else if (rest === "text") {
+          setSharedText(msg);
         } else if (rest.startsWith("state/")) {
           setActual((o) => ({ ...o, [rest.slice(6)]: Number(msg) }));
         } else if (rest.startsWith("out/")) {
@@ -96,13 +100,27 @@ export function useBoardMqtt(uid: string | null) {
     [uid],
   );
 
+  /** ข้อความทดสอบ MQTT แบบ retained ทุกเครื่องที่เปิด UID เดียวกันจะเห็นค่าล่าสุด */
+  const sendText = useCallback(
+    (value: string) => {
+      const client = clientRef.current;
+      if (!uid || !client?.connected) return false;
+      const text = value.trim().slice(0, 500);
+      if (!text) return false;
+      setSharedText(text);
+      client.publish(topics(uid).text, text, { qos: 1, retain: true });
+      return true;
+    },
+    [uid],
+  );
+
   // บอร์ดออนไลน์: แสดงค่าจริงจากบอร์ด (แต่ค่าที่เพิ่งกดจะแสดงทันที) · ออฟไลน์: แสดงค่าที่สั่งไว้
   const outputs = online ? { ...actual, ...pendingOnly(desired, actual) } : { ...actual, ...desired };
-  return { broker, config, online, outputs, inputs, lastMessage, setOutput };
+  return { broker, config, online, outputs, inputs, sharedText, lastMessage, setOutput, sendText };
 }
 
 /** ส่งข้อมูลบอร์ดขึ้น broker แบบ retained (ใช้ตอนลงทะเบียน) */
-export async function publishConfig(uid: string, config: BoardConfig, initialOutputs: Record<number, number>) {
+export async function publishConfig(uid: string, config: BoardConfig, initialOutputs: Record<number, number>, initialText = "") {
   const mqtt = (await import("mqtt")).default;
   const t = topics(uid);
   return new Promise<void>((resolve, reject) => {
@@ -127,6 +145,9 @@ export async function publishConfig(uid: string, config: BoardConfig, initialOut
         await client.publishAsync(t.config, encodeConfig(config), { qos: 1, retain: true });
         for (const [g, v] of Object.entries(initialOutputs)) {
           await client.publishAsync(t.out(g), String(v), { qos: 1, retain: true });
+        }
+        if (initialText.trim()) {
+          await client.publishAsync(t.text, initialText.trim().slice(0, 500), { qos: 1, retain: true });
         }
         clearTimeout(timer);
         client.end();

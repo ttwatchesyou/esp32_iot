@@ -2,8 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { App, Button, Popover, QRCode, Spin } from "antd";
-import { CopyOutlined, QrcodeOutlined } from "@ant-design/icons";
+import { App, Button, Input, Popover, QRCode, Spin } from "antd";
+import { CopyOutlined, QrcodeOutlined, SendOutlined } from "@ant-design/icons";
 import styled from "styled-components";
 import NavBar from "@/components/NavBar";
 import Widget from "@/components/DashboardWidgets";
@@ -86,14 +86,34 @@ const Empty = styled.div`
   p { margin: 0; color: ${({ theme }) => theme.muted}; max-width: 480px; line-height: 1.7; }
 `;
 
+const TextCard = styled.div`
+  padding: 20px;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 18px;
+  background: ${({ theme }) => theme.panel};
+  .latest {
+    min-height: 52px;
+    margin-bottom: 14px;
+    padding: 13px 15px;
+    border-radius: 12px;
+    background: ${({ theme }) => theme.panelAlt};
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  form { display: flex; gap: 8px; }
+  small { display: block; margin-top: 10px; color: ${({ theme }) => theme.muted}; }
+  @media (max-width: 520px) { form { flex-direction: column; } }
+`;
+
 export default function BoardDashboard({ params }: { params: Promise<{ uid: string }> }) {
   const { uid: rawUid } = use(params);
   const uid = rawUid.toLowerCase();
   const valid = isValidUid(uid);
   const { message } = App.useApp();
-  const { broker, config, online, outputs, inputs, setOutput } = useBoardMqtt(valid ? uid : null);
+  const { broker, config, online, outputs, inputs, sharedText, setOutput, sendText } = useBoardMqtt(valid ? uid : null);
   const [waited, setWaited] = useState(false);
   const [link, setLink] = useState("");
+  const [textDraft, setTextDraft] = useState("");
 
   useEffect(() => {
     setLink(window.location.href);
@@ -116,6 +136,14 @@ export default function BoardDashboard({ params }: { params: Promise<{ uid: stri
 
   const control = (gpio: number, v: number) => {
     if (!setOutput(gpio, v)) message.error("ยังไม่ได้เชื่อมต่อ ลองใหม่อีกครั้ง");
+  };
+
+  const submitText = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textDraft.trim()) return message.warning("พิมพ์ข้อความก่อนส่ง");
+    if (!sendText(textDraft)) return message.error("MQTT ยังไม่เชื่อมต่อ ลองใหม่อีกครั้ง");
+    setTextDraft("");
+    message.success("ส่งข้อความแล้ว");
   };
 
   const outs = config?.pins.filter((p) => DEVICE_TYPES[p.type].mode === "OUTPUT") ?? [];
@@ -152,6 +180,16 @@ export default function BoardDashboard({ params }: { params: Promise<{ uid: stri
             บอร์ดออฟไลน์ — ตรวจว่าเปิดไฟเลี้ยงบอร์ดและ WiFi ถูกต้อง · กดสั่งไว้ล่วงหน้าได้ บอร์ดจะทำตามเมื่อกลับมาออนไลน์
           </Note>
         )}
+        <Section>ทดสอบข้อความ MQTT</Section>
+        <TextCard>
+          <div className="latest">{sharedText || "ยังไม่มีข้อความ — ลองส่งข้อความจากช่องด้านล่าง"}</div>
+          <form onSubmit={submitText}>
+            <Input value={textDraft} onChange={(e) => setTextDraft(e.target.value)} maxLength={500}
+              placeholder="พิมพ์ข้อความที่ต้องการแชร์" aria-label="ข้อความ MQTT" />
+            <Button type="primary" htmlType="submit" icon={<SendOutlined />} disabled={broker !== "connected"}>ส่งข้อความ</Button>
+          </form>
+          <small>ข้อความล่าสุดถูกเก็บบน MQTT เครื่องอื่นที่เปิดลิงก์นี้จะเห็นข้อความเดียวกันทันที</small>
+        </TextCard>
         {outs.length > 0 && (
           <>
             <Section>ควบคุม</Section>

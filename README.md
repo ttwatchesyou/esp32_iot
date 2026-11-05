@@ -23,6 +23,7 @@ Chrome/Edge บนเครื่องผู้ใช้ ── Web Serial/USB 
 - เลือก GPIO สำหรับสวิตช์, LED, รีเลย์, มอเตอร์, บัซเซอร์, ปุ่ม และเซนเซอร์
 - ติดตั้งเฟิร์มแวร์และตั้งค่าบอร์ดด้วยปุ่มเดียวผ่าน Web Serial
 - Dashboard ผ่าน MQTT พร้อมสถานะและการควบคุมแบบเรียลไทม์
+- ส่งข้อความทดสอบ MQTT แบบ retained และแสดงพร้อมกันทุกเครื่องที่เปิด Dashboard เดียวกัน
 - Serial Monitor, ล้าง flash และอัปโหลด `.bin` เองในโหมดขั้นสูง
 - สร้างและดาวน์โหลด `.ino` สำหรับผู้ที่ต้องการแก้โค้ด Arduino เอง
 
@@ -54,7 +55,7 @@ npm run dev
 
 บอร์ดและ Dashboard เชื่อม HiveMQ Cloud ผ่าน TLS โดยตรง ค่า broker ถูกกำหนดไว้ใน firmware และเว็บ หัวข้อของแต่ละบอร์ดสร้างจาก hardware MAC 48 บิตในรูป `esp32studio/esp32<mac>/` จึงคงเดิมเมื่อเปิดจากเบราว์เซอร์เครื่องอื่นและไม่ชนกันระหว่างบอร์ด
 
-หัวข้อย่อยได้แก่ `config`, `status`, `out/<gpio>`, `state/<gpio>` และ `in/<gpio>`
+หัวข้อย่อยได้แก่ `config`, `status`, `text`, `out/<gpio>`, `state/<gpio>` และ `in/<gpio>`
 
 ## Deploy บน Vercel
 
