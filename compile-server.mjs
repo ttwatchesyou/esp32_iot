@@ -9,6 +9,7 @@ const run = promisify(execFile);
 const port = Number(process.env.PORT || 10000);
 const token = process.env.COMPILE_SERVER_TOKEN || "";
 const allowedFqbn = /^esp32:esp32:[a-z0-9_]+(:[A-Za-z0-9_=,]+)?$/;
+let compiling = false;
 
 function reply(res, status, body) {
   const json = JSON.stringify(body);
@@ -96,16 +97,25 @@ const server = createServer(async (req, res) => {
   if (req.method !== "POST" || req.url !== "/api/compile") {
     return reply(res, 404, { ok: false, log: "not found" });
   }
+  if (!token) {
+    return reply(res, 503, { ok: false, log: "compile server token is not configured" });
+  }
   if (token && req.headers["x-compile-token"] !== token) {
     return reply(res, 401, { ok: false, log: "unauthorized" });
   }
+  if (compiling) {
+    return reply(res, 429, { ok: false, log: "เครื่องคอมไพล์กำลังทำงาน กรุณาลองใหม่อีกครั้ง" });
+  }
 
+  compiling = true;
   try {
     const [status, body] = await compile(await readJson(req));
     return reply(res, status, body);
   } catch (error) {
     const status = error instanceof SyntaxError ? 400 : error.message === "request too large" ? 413 : 500;
     return reply(res, status, { ok: false, log: error.message });
+  } finally {
+    compiling = false;
   }
 });
 
